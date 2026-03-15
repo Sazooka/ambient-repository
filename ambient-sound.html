@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>環境音ビジュアライザー</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #08080f;
+    --fg: rgba(255,255,255,0.82);
+    --muted: rgba(255,255,255,0.38);
+    --accent: rgba(255,255,255,0.12);
+    --radius: 40px;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-weight: 300;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+    overflow: hidden;
+  }
+  h1 {
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 2.5rem;
+    font-weight: 300;
+  }
+  .scene {
+    width: min(520px, 100%);
+    height: 280px;
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 2rem;
+    background: #050510;
+  }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .sound-btn {
+    padding: 10px 22px;
+    border-radius: var(--radius);
+    border: 1px solid rgba(255,255,255,0.15);
+    background: transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    font-weight: 300;
+  }
+  .sound-btn:hover { border-color: rgba(255,255,255,0.35); color: var(--fg); }
+  .sound-btn.active {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.5);
+    color: #fff;
+  }
+
+  .vol-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .vol-row label { font-size: 12px; color: var(--muted); letter-spacing: 0.1em; }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 160px;
+    height: 2px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.85);
+    cursor: pointer;
+  }
+  .vol-val { font-size: 12px; color: var(--muted); min-width: 32px; }
+</style>
+</head>
+<body>
+<h1>環境音ビジュアライザー</h1>
+
+<div class="scene"><canvas id="c"></canvas></div>
+
+<div class="controls">
+  <button class="sound-btn active" data-sound="fire">焚き火</button>
+  <button class="sound-btn" data-sound="rain">雨</button>
+  <button class="sound-btn" data-sound="river">川</button>
+  <button class="sound-btn" data-sound="wind">風</button>
+  <button class="sound-btn" data-sound="none">停止</button>
+</div>
+
+<div class="vol-row">
+  <label>音量</label>
+  <input type="range" id="vol" min="0" max="100" value="60" step="1">
+  <span class="vol-val" id="volval">60%</span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.offsetWidth; H = canvas.offsetHeight;
+  canvas.width = W * devicePixelRatio; canvas.height = H * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+}
+resize();
+window.addEventListener('resize', resize);
+
+let currentSound = 'fire';
+let volGain = null;
+let audioCtx = null;
+let noiseSource = null;
+let particles = [];
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function stopSound() {
+  if (noiseSource) { try { noiseSource.stop(); } catch(e){} noiseSource = null; }
+}
+function makeNoise(buf) {
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+}
+function playFire(vol) {
+  const sr = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, sr * 4, sr); makeNoise(buf);
+  const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+  const lp2 = audioCtx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 400;
+  const gain = audioCtx.createGain(); gain.gain.value = vol * 1.2;
+  src.connect(lp).connect(lp2).connect(gain).connect(audioCtx.destination);
+  src.start(); volGain = gain; return src;
+}
+function playRain(vol) {
+  const sr = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, sr * 3, sr); makeNoise(buf);
+  const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1200;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000;
+  const gain = audioCtx.createGain(); gain.gain.value = vol * 0.5;
+  src.connect(hp).connect(lp).connect(gain).connect(audioCtx.destination);
+  src.start(); volGain = gain; return src;
+}
+function playRiver(vol) {
+  const sr = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, sr * 4, sr); makeNoise(buf);
+  const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 800; bp.Q.value = 0.3;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2000;
+  const gain = audioCtx.createGain(); gain.gain.value = vol * 0.7;
+  src.connect(bp).connect(lp).connect(gain).connect(audioCtx.destination);
+  src.start(); volGain = gain; return src;
+}
+function playWind(vol) {
+  const sr = audioCtx.sampleRate;
+  const buf = audioCtx.createBuffer(1, sr * 5, sr); makeNoise(buf);
+  const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 300; bp.Q.value = 0.1;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+  const gain = audioCtx.createGain(); gain.gain.value = vol * 0.9;
+  src.connect(bp).connect(lp).connect(gain).connect(audioCtx.destination);
+  src.start(); volGain = gain; return src;
+}
+function getVol() { return document.getElementById('vol').value / 100 * 0.4; }
+function startSound(type) {
+  initAudio(); stopSound();
+  const v = getVol();
+  if (type === 'fire') noiseSource = playFire(v);
+  else if (type === 'rain') noiseSource = playRain(v);
+  else if (type === 'river') noiseSource = playRiver(v);
+  else if (type === 'wind') noiseSource = playWind(v);
+}
+
+document.getElementById('vol').addEventListener('input', e => {
+  const v = +e.target.value;
+  document.getElementById('volval').textContent = v + '%';
+  if (volGain) {
+    const mult = currentSound === 'fire' ? 3 : currentSound === 'rain' ? 1.25 : currentSound === 'wind' ? 2.25 : 1.75;
+    volGain.gain.value = (v / 100) * 0.4 * mult;
+  }
+});
+document.querySelectorAll('.sound-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sound-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSound = btn.dataset.sound;
+    if (currentSound === 'none') stopSound();
+    else startSound(currentSound);
+    particles = [];
+  });
+});
+
+function spawnFire() {
+  if (particles.length < 120 && Math.random() < 0.6) {
+    const cx = W * 0.5 + (Math.random() - 0.5) * W * 0.18;
+    particles.push({ x: cx, y: H * 0.85, vx: (Math.random() - 0.5) * 0.8, vy: -(1.2 + Math.random() * 2.5), life: 1, size: 3 + Math.random() * 14, type: 'fire' });
+  }
+}
+function spawnRain() {
+  if (particles.length < 200 && Math.random() < 0.9)
+    particles.push({ x: Math.random() * W, y: -10, vx: 0.8, vy: 8 + Math.random() * 6, life: 1, type: 'rain' });
+}
+function spawnRiver() {
+  if (particles.length < 80 && Math.random() < 0.4)
+    particles.push({ x: -10, y: H * 0.5 + (Math.random() - 0.5) * H * 0.3, vx: 2 + Math.random() * 2, vy: (Math.random() - 0.5) * 0.5, life: 1, size: 2 + Math.random() * 6, type: 'river' });
+}
+function spawnWind() {
+  if (particles.length < 60 && Math.random() < 0.3)
+    particles.push({ x: -20, y: Math.random() * H, vx: 5 + Math.random() * 4, vy: (Math.random() - 0.5) * 1, life: 1, len: 20 + Math.random() * 40, type: 'wind' });
+}
+function drawBg() {
+  if (currentSound === 'fire' || currentSound === 'none') {
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#0a0a1a'); grd.addColorStop(1, '#1a0800');
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#2a1800';
+    ctx.fillRect(W*0.3, H*0.84, W*0.4, H*0.1);
+    ctx.fillRect(W*0.35, H*0.87, W*0.3, H*0.08);
+  } else if (currentSound === 'rain') {
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#0d1520'); grd.addColorStop(1, '#1a2535');
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(100,140,200,0.08)'; ctx.fillRect(0, H*0.8, W, H*0.2);
+  } else if (currentSound === 'river') {
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#0a1810'); grd.addColorStop(0.5, '#0d2030'); grd.addColorStop(1, '#0a1810');
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(20,60,100,0.5)'; ctx.fillRect(0, H*0.35, W, H*0.3);
+  } else if (currentSound === 'wind') {
+    const grd = ctx.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, '#0e1508'); grd.addColorStop(1, '#1a2510');
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
+  }
+}
+function loop() {
+  requestAnimationFrame(loop);
+  ctx.clearRect(0, 0, W, H);
+  drawBg();
+  if (currentSound === 'fire') spawnFire();
+  else if (currentSound === 'rain') spawnRain();
+  else if (currentSound === 'river') spawnRiver();
+  else if (currentSound === 'wind') spawnWind();
+  particles = particles.filter(p => p.life > 0.01);
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    if (p.type === 'fire') { p.life -= 0.018; p.vx += (Math.random()-0.5)*0.3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*p.life, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,${Math.floor(60+(1-p.life)*120)},0,${p.life*0.85})`; ctx.fill();
+    } else if (p.type === 'rain') { p.life -= 0.04;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x-p.vx, p.y-p.vy*0.5);
+      ctx.strokeStyle = `rgba(160,200,255,${p.life*0.5})`; ctx.lineWidth=1; ctx.stroke();
+    } else if (p.type === 'river') { p.life -= 0.012; p.vy += (Math.random()-0.5)*0.1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size*p.life*0.5, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(80,160,220,${p.life*0.4})`; ctx.fill();
+    } else if (p.type === 'wind') { p.life -= 0.015; p.x += p.vx*0.5;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x+p.len, p.y+p.vy*5);
+      ctx.strokeStyle = `rgba(180,220,180,${p.life*0.35})`; ctx.lineWidth=1; ctx.stroke();
+    }
+  }
+}
+loop();
+startSound('fire');
+</script>
+</body>
+</html>
