@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>環境音ビジュアライザー</title>
+<title>Ambient Sound Visualizer</title>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@300;400&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -98,20 +98,20 @@
 </style>
 </head>
 <body>
-<h1>環境音ビジュアライザー</h1>
+<h1>Ambient Sound Visualizer</h1>
 
 <div class="scene"><canvas id="c"></canvas></div>
 
 <div class="controls">
-  <button class="sound-btn active" data-sound="fire">焚き火</button>
-  <button class="sound-btn" data-sound="rain">雨</button>
-  <button class="sound-btn" data-sound="river">川</button>
-  <button class="sound-btn" data-sound="wind">風</button>
-  <button class="sound-btn" data-sound="none">停止</button>
+  <button class="sound-btn active" data-sound="fire">Fire</button>
+  <button class="sound-btn" data-sound="rain">Rain</button>
+  <button class="sound-btn" data-sound="river">River</button>
+  <button class="sound-btn" data-sound="wind">Wind</button>
+  <button class="sound-btn" data-sound="none">Stop</button>
 </div>
 
 <div class="vol-row">
-  <label>音量</label>
+  <label>Volume</label>
   <input type="range" id="vol" min="0" max="100" value="60" step="1">
   <span class="vol-val" id="volval">60%</span>
 </div>
