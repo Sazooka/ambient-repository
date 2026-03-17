@@ -139,7 +139,11 @@ function initAudio() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 function stopSound() {
-  if (noiseSource) { try { noiseSource.stop(); } catch(e){} noiseSource = null; }
+  if (noiseSource) {
+    if (noiseSource._stopCrackle) noiseSource._stopCrackle();
+    try { noiseSource.stop(); } catch(e){}
+    noiseSource = null;
+  }
 }
 function makeNoise(buf) {
   const data = buf.getChannelData(0);
@@ -147,13 +151,73 @@ function makeNoise(buf) {
 }
 function playFire(vol) {
   const sr = audioCtx.sampleRate;
+
+  // ゴー：低音ベース
   const buf = audioCtx.createBuffer(1, sr * 4, sr); makeNoise(buf);
   const src = audioCtx.createBufferSource(); src.buffer = buf; src.loop = true;
-  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
-  const lp2 = audioCtx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 400;
-  const gain = audioCtx.createGain(); gain.gain.value = vol * 1.2;
-  src.connect(lp).connect(lp2).connect(gain).connect(audioCtx.destination);
-  src.start(); volGain = gain; return src;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 350;
+  const lp2 = audioCtx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 250;
+  const boost = audioCtx.createBiquadFilter(); boost.type = 'peaking'; boost.frequency.value = 120; boost.gain.value = 8;
+  const baseGain = audioCtx.createGain(); baseGain.gain.value = vol * 0.9;
+  src.connect(boost).connect(lp).connect(lp2).connect(baseGain).connect(audioCtx.destination);
+  src.start();
+
+  let crackleActive = true;
+
+  // パチッ：近距離感の鋭い音（頻繁に鳴る）
+  function brightCrack() {
+    if (!crackleActive) return;
+    const len = Math.floor(sr * 0.022);
+    const b = audioCtx.createBuffer(1, len, sr);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.004));
+    }
+    const s = audioCtx.createBufferSource(); s.buffer = b;
+    const g = audioCtx.createGain(); g.gain.value = vol * (1.2 + Math.random() * 1.8);
+    s.connect(g).connect(audioCtx.destination); s.start();
+    setTimeout(brightCrack, 300 + Math.random() * 900);
+  }
+
+  // パチパチ：中音域の連続パチパチ（常時）
+  function midCrackle() {
+    if (!crackleActive) return;
+    const len = Math.floor(sr * 0.035);
+    const b = audioCtx.createBuffer(1, len, sr);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.010));
+    }
+    const s = audioCtx.createBufferSource(); s.buffer = b;
+    const bp = audioCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 0.8;
+    const g = audioCtx.createGain(); g.gain.value = vol * (0.7 + Math.random() * 0.9);
+    s.connect(bp).connect(g).connect(audioCtx.destination); s.start();
+    setTimeout(midCrackle, 100 + Math.random() * 300);
+  }
+
+  // チリチリ：高域の細かい音（常時）
+  function sizzle() {
+    if (!crackleActive) return;
+    const len = Math.floor(sr * 0.015);
+    const b = audioCtx.createBuffer(1, len, sr);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.004));
+    }
+    const s = audioCtx.createBufferSource(); s.buffer = b;
+    const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2000;
+    const g = audioCtx.createGain(); g.gain.value = vol * (0.3 + Math.random() * 0.4);
+    s.connect(hp).connect(g).connect(audioCtx.destination); s.start();
+    setTimeout(sizzle, 60 + Math.random() * 160);
+  }
+
+  brightCrack();
+  midCrackle();
+  sizzle();
+
+  volGain = baseGain;
+  src._stopCrackle = () => { crackleActive = false; };
+  return src;
 }
 function playRain(vol) {
   const sr = audioCtx.sampleRate;
@@ -217,7 +281,7 @@ document.querySelectorAll('.sound-btn').forEach(btn => {
 function spawnFire() {
   if (particles.length < 120 && Math.random() < 0.6) {
     const cx = W * 0.5 + (Math.random() - 0.5) * W * 0.18;
-    particles.push({ x: cx, y: H * 0.85, vx: (Math.random() - 0.5) * 0.8, vy: -(1.2 + Math.random() * 2.5), life: 1, size: 3 + Math.random() * 14, type: 'fire' });
+    particles.push({ x: cx, y: H * 0.82, vx: (Math.random() - 0.5) * 0.8, vy: -(1.2 + Math.random() * 2.5), life: 1, size: 3 + Math.random() * 14, type: 'fire' });
   }
 }
 function spawnRain() {
@@ -235,11 +299,36 @@ function spawnWind() {
 function drawBg() {
   if (currentSound === 'fire' || currentSound === 'none') {
     const grd = ctx.createLinearGradient(0, 0, 0, H);
-    grd.addColorStop(0, '#0a0a1a'); grd.addColorStop(1, '#1a0800');
+    grd.addColorStop(0, '#04040e');
+    grd.addColorStop(0.6, '#0e0600');
+    grd.addColorStop(1, '#1a0800');
     ctx.fillStyle = grd; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#2a1800';
-    ctx.fillRect(W*0.3, H*0.84, W*0.4, H*0.1);
-    ctx.fillRect(W*0.35, H*0.87, W*0.3, H*0.08);
+    const groundY = H * 0.82;
+    const groundGrd = ctx.createLinearGradient(0, groundY, 0, H);
+    groundGrd.addColorStop(0, '#1a0e04');
+    groundGrd.addColorStop(1, '#0a0600');
+    ctx.fillStyle = groundGrd;
+    ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
+    ctx.save();
+    ctx.strokeStyle = '#3a1a06'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(W*0.35, groundY+8); ctx.lineTo(W*0.55, groundY - H*0.22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W*0.65, groundY+8); ctx.lineTo(W*0.45, groundY - H*0.22); ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = '#2a1204'; ctx.lineWidth = 14; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(W*0.30, groundY+12); ctx.lineTo(W*0.52, groundY - H*0.18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W*0.70, groundY+12); ctx.lineTo(W*0.48, groundY - H*0.18); ctx.stroke();
+    ctx.restore();
+    const emberGrd = ctx.createRadialGradient(W*0.5, groundY, 2, W*0.5, groundY, W*0.18);
+    emberGrd.addColorStop(0, 'rgba(255,140,0,0.9)');
+    emberGrd.addColorStop(0.4, 'rgba(200,50,0,0.5)');
+    emberGrd.addColorStop(1, 'rgba(100,10,0,0)');
+    ctx.fillStyle = emberGrd;
+    ctx.beginPath(); ctx.ellipse(W*0.5, groundY, W*0.18, H*0.04, 0, 0, Math.PI*2); ctx.fill();
+    const reflGrd = ctx.createRadialGradient(W*0.5, H, 10, W*0.5, H, W*0.5);
+    reflGrd.addColorStop(0, 'rgba(180,60,0,0.18)');
+    reflGrd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = reflGrd; ctx.fillRect(0, groundY, W, H - groundY);
   } else if (currentSound === 'rain') {
     const grd = ctx.createLinearGradient(0, 0, 0, H);
     grd.addColorStop(0, '#0d1520'); grd.addColorStop(1, '#1a2535');
